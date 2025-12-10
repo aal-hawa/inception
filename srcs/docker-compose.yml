@@ -1,0 +1,100 @@
+
+services:
+  mariadb:
+    build: ./requirements/mariadb
+    image: mariadb
+    container_name: mariadb
+    restart: unless-stopped
+    expose: 
+      - "3306"
+    env_file: .env
+    secrets:
+      - DB_PASSWORD
+      - DB_ROOT_PASSWORD
+    networks: ["inception"]
+    volumes:
+      - "mariadb:/var/lib/mysql"
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -u root -p\"$(cat /run/secrets/DB_ROOT_PASSWORD)\" --silent"]
+      interval: 3s
+      timeout: 30s
+      retries: 5
+      start_period: 3s
+
+  
+  wordpress:
+    build: ./requirements/wordpress
+    image: wordpress
+    container_name: wordpress
+    restart: unless-stopped
+    expose: 
+      - "9000"
+    env_file: .env
+    secrets:
+      - DB_PASSWORD
+      - CREDENTIALS
+    networks: ["inception"]
+    volumes:
+      - "wordpress:/var/www/html/wordpress"
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "php-fpm83", "-t"]
+      interval: 3s
+      timeout: 30s
+      retries: 3
+
+
+  nginx:
+    build: ./requirements/nginx
+    image: nginx
+    container_name: nginx
+    restart: unless-stopped
+    ports: ["443:443"]
+    env_file: .env
+    environment:
+      - DOMAIN_NAME=${DOMAIN_NAME}
+    networks: ["inception"]
+    volumes:
+      - "wordpress:/var/www/html/wordpress"
+    depends_on:
+      wordpress:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 3s
+      timeout: 30s
+      retries: 3
+
+  
+
+
+networks:
+  inception:
+    name: inception
+    driver: bridge
+
+secrets:
+  DB_PASSWORD:
+    file: ../secrets/db_password.txt
+  DB_ROOT_PASSWORD:
+    file: ../secrets/db_root_password.txt
+  CREDENTIALS:
+    file: ../secrets/credentials.txt
+
+volumes:
+  mariadb:
+    name: mariadb
+    driver: local
+    driver_opts:
+      o: bind
+      type: none
+      device: /home/${USER}/data/mariadb
+  wordpress:
+    name: wordpress
+    driver: local
+    driver_opts:
+      o: bind
+      type: none
+      device: /home/${USER}/data/wordpress
