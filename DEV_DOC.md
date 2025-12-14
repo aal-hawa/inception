@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document provides comprehensive technical guidance for developers working on the Inception project. It covers environment setup, development workflows, build processes, and advanced container management techniques.
+This document provides comprehensive technical guidance for developers working on the Inception project. It covers environment setup, development workflows, build processes, and advanced container management techniques specific to this Alpine Linux-based Docker implementation.
 
 ## Development Environment Setup
 
@@ -15,7 +15,7 @@ Before setting up the development environment, ensure you have:
 - **Make**: Build utility for project automation
 - **Text Editor/IDE**: VS Code, Vim, or similar with Docker extensions
 - **Terminal**: Modern terminal with tab completion
-- **System Permissions**: Ability to manage Docker containers and volumes
+- **System Permissions**: Ability to manage Docker containers and create directories in `/home/$USER/data/`
 
 ### Initial Repository Setup
 
@@ -27,7 +27,7 @@ Before setting up the development environment, ensure you have:
 
 2. **Verify Project Structure**:
    ```bash
-   tree -L 3
+   tree -L 4
    ```
    Expected structure:
    ```
@@ -44,8 +44,18 @@ Before setting up the development environment, ensure you have:
        ├── docker-compose.yml
        └── requirements/
            ├── mariadb/
+           │   ├── Dockerfile
+           │   ├── conf/mariadb-server.cnf
+           │   └── tools/entrypoint.sh
            ├── nginx/
+           │   ├── Dockerfile
+           │   ├── conf/nginx.conf
+           │   └── tools/entrypoint.sh
            └── wordpress/
+               ├── Dockerfile
+               ├── conf/www.conf
+               ├── tools/entrypoint.sh
+               └── tools/wp-cli.phar
    ```
 
 ### Configuration Files Setup
@@ -57,11 +67,14 @@ Create and configure the `.env` file in `srcs/`:
 ```bash
 # srcs/.env
 DOMAIN_NAME=your-domain.com
-WP_TITLE=My WordPress Site
-WP_ADMIN_USER=admin
-WP_ADMIN_EMAIL=admin@your-domain.com
-WP_USER=user
-WP_USER_EMAIL=user@your-domain.com
+DB_NAME=wordpress
+DB_USER=wordpress_user
+DB_HOST=mariadb
+MARIADB_USER=mysql
+MARIADB_DATABASE_DIR=/var/lib/mysql
+MARIADB_PLUGIN_DIR=/usr/lib/mariadb/plugin
+MARIADB_PID_FILE=/run/mysqld/mysqld.pid
+DB_ROOT_USER=root
 ```
 
 #### 2. Secrets Configuration
@@ -73,26 +86,18 @@ Set up secure credentials:
 openssl rand -base64 32 > secrets/db_root_password.txt
 openssl rand -base64 32 > secrets/db_password.txt
 
-# Create WordPress admin credentials
-echo "admin:$(openssl rand -base64 16)" > secrets/credentials.txt
+# Create WordPress credentials (maintain the format)
+cat > secrets/credentials.txt << EOF
+WP_USER=admin
+WP_PASS=$(openssl rand -base64 16)
+WP_EMAIL=admin@your-domain.com
+WP_USER2=subscriber
+WP_PASS2=$(openssl rand -base64 16)
+WP_EMAIL2=subscriber@your-domain.com
+EOF
 
 # Set proper permissions
 chmod 600 secrets/*
-```
-
-#### 3. SSL Certificates (Development)
-
-For development, create self-signed certificates:
-
-```bash
-# Create SSL directory
-mkdir -p srcs/requirements/nginx/ssl
-
-# Generate self-signed certificate
-openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-  -keyout srcs/requirements/nginx/ssl/nginx.key \
-  -out srcs/requirements/nginx/ssl/nginx.crt \
-  -subj "/C=US/ST=State/L=City/O=Organization/CN=localhost"
 ```
 
 ## Build and Launch Process
@@ -137,7 +142,9 @@ docker compose build nginx
 
 # 4. Start services in dependency order
 docker compose up -d mariadb
+# Wait for MariaDB to be healthy
 docker compose up -d wordpress
+# Wait for WordPress to be healthy
 docker compose up -d nginx
 ```
 
@@ -148,9 +155,9 @@ docker compose up -d nginx
 Enable debug logging during development:
 
 ```bash
-# Build with debug flags
+# Build with verbose output
 cd srcs
-docker compose build --build-arg DEBUG=1 wordpress
+docker compose build --progress=plain
 
 # Run with verbose logging
 docker compose up --build
@@ -241,6 +248,12 @@ docker inspect --format='{{json .State.Health}}' mariadb
 
 # Manual health check
 docker exec mariadb mysqladmin ping -u root -p$(cat secrets/db_root_password.txt)
+
+# Test WordPress health
+docker exec wordpress wp --allow-root --path=/var/www/html/wordpress db check
+
+# Test Nginx configuration
+docker exec nginx nginx -t
 ```
 
 ## Volume and Data Management
@@ -257,6 +270,10 @@ docker volume inspect wordpress
 
 # View volume usage
 docker system df -v
+
+# Check host directory contents
+ls -la /home/$USER/data/mariadb/
+ls -la /home/$USER/data/wordpress/
 ```
 
 ### Backup Procedures
@@ -299,14 +316,18 @@ sudo tar -czf wordpress-backup-$(date +%Y%m%d).tar.gz \
 make down
 
 # Restore database
-docker run --rm -v mariadb:/data \
-  -v $(pwd):/backup alpine \
-  tar -xzf /backup/mariadb-backup.tar.gz -C /data
+sudo rm -rf /home/$USER/data/mariadb/*
+sudo tar -xzf mariadb-backup-20231201.tar.gz \
+  -C /home/$USER/data/mariadb/
 
 # Restore WordPress files
-docker run --rm -v wordpress:/data \
-  -v $(pwd):/backup alpine \
-  tar -xzf /backup/wordpress-backup.tar.gz -C /data
+sudo rm -rf /home/$USER/data/wordpress/*
+sudo tar -xzf wordpress-backup-20231201.tar.gz \
+  -C /home/$USER/data/wordpress/
+
+# Fix permissions
+sudo chown -R 999:999 /home/$USER/data/wordpress/
+sudo chown -R mysql:mysql /home/$USER/data/mariadb/
 
 # Restart services
 make up
@@ -320,35 +341,74 @@ make up
 
 **MariaDB Dockerfile** (`srcs/requirements/mariadb/Dockerfile`):
 ```dockerfile
-FROM alpine:latest
-# Custom MariaDB installation and configuration
-# Security hardening
-# Initialization scripts
+FROM alpine:3.21
+RUN apk update
+RUN apk add mariadb mariadb-client openrc
+RUN mkdir -p /run/openrc && touch /run/openrc/softlevel
+COPY conf/mariadb-server.cnf /etc/my.cnf.d/mariadb-server.cnf
+COPY tools/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT [ "/entrypoint.sh" ]
 ```
 
 **WordPress Dockerfile** (`srcs/requirements/wordpress/Dockerfile`):
 ```dockerfile
-FROM alpine:latest
-# PHP-FPM installation
-# WordPress download and configuration
-# WP-CLI setup
-# Performance optimization
+FROM alpine:3.21
+RUN apk update && apk add php php83 php83-fpm php83-mysqli \
+  php83-mbstring php83-gd php83-opcache php83-phar php83-xml \
+  mariadb-client wget tar
+COPY tools/entrypoint.sh /entrypoint.sh
+COPY tools/wp-cli.phar /usr/local/bin/wp
+RUN chmod +x /usr/local/bin/wp
+COPY conf/www.conf /etc/php83/php-fpm.d/www.conf
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
 ```
 
 **Nginx Dockerfile** (`srcs/requirements/nginx/Dockerfile`):
 ```dockerfile
-FROM alpine:latest
-# Nginx installation
-# SSL configuration
-# Performance tuning
-# Security headers
+FROM alpine:3.21
+RUN apk update && apk add nginx openssl
+COPY conf/nginx.conf /etc/nginx/nginx.conf
+COPY tools/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+CMD [ "/entrypoint.sh" ]
 ```
 
 #### Configuration Files
 
 - **Nginx Config**: `srcs/requirements/nginx/conf/nginx.conf`
+  - SSL configuration with self-signed certificates
+  - PHP-FPM proxy to wordpress:9000
+  - Static file serving and WordPress URL rewriting
+
 - **PHP-FPM Config**: `srcs/requirements/wordpress/conf/www.conf`
+  - Process manager: dynamic
+  - User/group: nobody
+  - Listen on 0.0.0.0:9000
+
 - **MariaDB Config**: `srcs/requirements/mariadb/conf/mariadb-server.cnf`
+  - Bind address: 0.0.0.0
+  - Network access enabled for container communication
+
+#### Entrypoint Scripts
+
+**MariaDB Entrypoint** (`srcs/requirements/mariadb/tools/entrypoint.sh`):
+- Initializes OpenRC
+- Sets up MariaDB data directory
+- Creates database and users on first run
+- Starts MariaDB server with proper parameters
+
+**WordPress Entrypoint** (`srcs/requirements/wordpress/tools/entrypoint.sh`):
+- Downloads WordPress if not present
+- Configures wp-config.php with database credentials
+- Installs WordPress if not already installed
+- Creates admin and subscriber users from secrets
+- Starts PHP-FPM service
+
+**Nginx Entrypoint** (`srcs/requirements/nginx/tools/entrypoint.sh`):
+- Generates self-signed SSL certificates using DOMAIN_NAME
+- Starts Nginx service
 
 ### Making Changes
 
@@ -406,7 +466,7 @@ docker compose up -d newservice
 docker exec nginx wget -qO- http://wordpress:9000
 
 # Test WordPress to MariaDB connectivity
-docker exec wordpress wp-cli.phar db check
+docker exec wordpress wp --allow-root --path=/var/www/html/wordpress db check
 
 # Test external connectivity
 docker exec nginx ping -c 3 google.com
@@ -416,7 +476,7 @@ docker exec nginx ping -c 3 google.com
 
 ```bash
 # Check SSL certificate
-docker exec nginx openssl x509 -in /etc/ssl/certs/nginx.crt -text -noout
+docker exec nginx openssl x509 -in /etc/self-signed.crt -text -noout
 
 # Test SSL configuration
 docker exec nginx nginx -t
@@ -432,7 +492,7 @@ openssl s_client -connect localhost:443 -servername localhost
 ab -n 100 -c 10 https://localhost/
 
 # WordPress performance test
-docker exec wordpress wp-cli.phar cache flush
+docker exec wordpress wp --allow-root --path=/var/www/html/wordpress cache flush
 
 # Database performance
 docker exec mariadb mysql -u root -p$(cat secrets/db_root_password.txt) -e "SHOW PROCESSLIST;"
@@ -445,24 +505,30 @@ docker exec mariadb mysql -u root -p$(cat secrets/db_root_password.txt) -e "SHOW
 For optimizing image sizes:
 
 ```dockerfile
-# Example multi-stage WordPress Dockerfile
-FROM alpine:latest as builder
-# Build stage with development tools
+# Example optimized WordPress Dockerfile
+FROM alpine:3.21 as builder
+RUN apk add --no-cache php83 php83-phar wget
+COPY tools/wp-cli.phar /usr/local/bin/wp
 
-FROM alpine:latest as runtime
-# Runtime stage with only necessary components
-COPY --from=builder /path/to/artifacts /path/to/destination
+FROM alpine:3.21 as runtime
+RUN apk add --no-cache php83 php83-fpm php83-mysqli \
+  php83-mbstring php83-gd php83-opcache php83-xml \
+  mariadb-client
+COPY --from=builder /usr/local/bin/wp /usr/local/bin/wp
+COPY conf/www.conf /etc/php83/php-fpm.d/www.conf
+COPY tools/entrypoint.sh /entrypoint.sh
 ```
 
 ### Custom Networks
 
 ```bash
-# Create custom network
-docker network create --driver bridge inception-dev
+# Create custom network (already defined in docker-compose.yml)
+docker network create --driver bridge inception
 
 # Connect containers to custom network
-docker network connect inception-dev nginx
-docker network connect inception-dev wordpress
+docker network connect inception nginx
+docker network connect inception wordpress
+docker network connect inception mariadb
 ```
 
 ### Development Scripts
@@ -488,6 +554,9 @@ services:
       - WP_DEBUG_LOG=1
     volumes:
       - ./logs:/var/log/wordpress
+  nginx:
+    volumes:
+      - ./logs/nginx:/var/log/nginx
 EOF
 
 echo "Development environment configured!"
@@ -525,7 +594,9 @@ jobs:
       run: |
         cd srcs
         docker compose up -d
-        # Add test commands here
+        sleep 30
+        docker compose exec -T wordpress wp --allow-root --path=/var/www/html/wordpress db check
+        docker compose down
 ```
 
 ## Troubleshooting Guide
@@ -570,6 +641,16 @@ docker exec nginx ping wordpress
 docker exec wordpress ping mariadb
 ```
 
+#### Permission Issues
+
+```bash
+# Fix WordPress file permissions
+sudo chown -R 999:999 /home/$USER/data/wordpress/
+
+# Fix MariaDB permissions
+sudo chown -R mysql:mysql /home/$USER/data/mariadb/
+```
+
 ### Performance Debugging
 
 ```bash
@@ -587,8 +668,8 @@ docker exec mariadb mysql -u root -p -e "SHOW SLOW QUERY LOG;"
 
 ### Security Considerations
 
-1. **Regular Updates**: Keep base images updated
-2. **Minimal Images**: Use minimal base images (Alpine)
+1. **Regular Updates**: Keep Alpine base images updated
+2. **Minimal Images**: Use minimal base images and remove unnecessary packages
 3. **Secret Management**: Never commit secrets to version control
 4. **Network Isolation**: Use custom networks for service isolation
 5. **Regular Scanning**: Scan images for vulnerabilities
@@ -619,9 +700,17 @@ docker exec mariadb mysql -u root -p -e "SHOW SLOW QUERY LOG;"
 - Document changes in documentation
 - Test changes thoroughly
 
+### Project-Specific Guidelines
+
+1. **Alpine Linux**: Use Alpine 3.21 as base image for minimal size
+2. **Service Dependencies**: Respect service dependencies in docker-compose.yml
+3. **Health Checks**: Implement proper health checks for all services
+4. **Secret Management**: Use Docker secrets for all sensitive data
+5. **Data Persistence**: Use bind mounts for data persistence
+
 ### Pull Request Process
 
-1. Create feature branch from `develop`
+1. Create feature branch from `main`
 2. Implement changes with tests
 3. Update documentation
 4. Submit pull request with clear description

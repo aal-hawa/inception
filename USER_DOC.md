@@ -2,34 +2,37 @@
 
 ## Overview
 
-This document provides essential information for end users and system administrators who need to manage and interact with the Inception Docker hosting environment. The system provides a complete WordPress hosting solution with automated deployment and management capabilities.
+This document provides essential information for end users and system administrators who need to manage and interact with the Inception Docker hosting environment. The system provides a complete WordPress hosting solution built from Alpine Linux containers with automated deployment and management capabilities.
 
 ## Services Provided
 
 The Inception stack includes the following services:
 
 ### Web Services
-- **Nginx Web Server**: High-performance reverse proxy with SSL/TLS encryption
+- **Nginx Web Server (Alpine 3.21)**: High-performance reverse proxy with automated SSL/TLS
   - Handles HTTPS traffic on port 443
-  - Provides static file serving and PHP request forwarding
-  - Includes security headers and SSL configuration
+  - Automatically generates self-signed SSL certificates on startup
+  - Provides static file serving and PHP-FPM request forwarding
+  - Uses domain name from environment variables for certificate generation
 
-- **WordPress Content Management System**: Full-featured CMS
+- **WordPress Content Management System**: Full-featured CMS with automated setup
   - Accessible via web interface
   - Admin panel available at `/wp-admin`
-  - Custom themes and plugins supported
-  - Database-driven content storage
+  - Automatically downloads and configures WordPress on first run
+  - Creates admin and subscriber users automatically from secrets
+  - Uses PHP-FPM 8.3 for optimal performance
 
 ### Database Services
-- **MariaDB Database Server**: Robust relational database
+- **MariaDB Database Server (Alpine 3.21)**: Robust relational database with OpenRC
   - Stores WordPress content, user data, and configuration
-  - Automated backup and recovery capabilities
+  - Automated database initialization with secure user accounts
+  - Uses OpenRC for service management
   - Secure access limited to WordPress container
 
 ### Infrastructure Services
-- **Docker Network Management**: Isolated communication between services
-- **Persistent Storage**: Data persistence across container restarts
-- **Health Monitoring**: Automated service health checks
+- **Docker Network Management**: Custom bridge network named "inception" for isolated communication
+- **Persistent Storage**: Bind mount volumes to host filesystem at `/home/$USER/data/`
+- **Health Monitoring**: Automated health checks for all services with dependency management
 
 ## Getting Started
 
@@ -40,9 +43,11 @@ Before deploying the Inception stack, ensure your system meets these requirement
 - **Operating System**: Linux, macOS, or Windows with Docker support
 - **Docker**: Version 20.10 or later
 - **Docker Compose**: Version 2.0 or later
+- **Make**: Build utility for project automation
 - **Memory**: Minimum 2GB RAM (4GB recommended)
-- **Storage**: Minimum 10GB free disk space
+- **Storage**: Minimum 10GB free disk space in `/home/$USER/data/`
 - **Network**: Port 443 must be available for HTTPS traffic
+- **Permissions**: Ability to create directories in `/home/$USER/data/`
 
 ### Initial Setup
 
@@ -50,7 +55,7 @@ Before deploying the Inception stack, ensure your system meets these requirement
    ```bash
    # Install Docker (Ubuntu/Debian example)
    sudo apt update
-   sudo apt install docker.io docker-compose-plugin
+   sudo apt install docker.io docker-compose-plugin make
    
    # Add user to docker group
    sudo usermod -aG docker $USER
@@ -63,10 +68,26 @@ Before deploying the Inception stack, ensure your system meets these requirement
    cd inception
    ```
 
-3. **Configure Credentials**:
-   - Edit files in the `secrets/` directory
-   - Set strong, unique passwords for each service
-   - Ensure domain name is properly configured
+3. **Configure Environment Variables**:
+   Create `srcs/.env` file:
+   ```bash
+   # srcs/.env
+   DOMAIN_NAME=your-domain.com
+   DB_NAME=wordpress
+   DB_USER=wordpress_user
+   DB_HOST=mariadb
+   MARIADB_USER=mysql
+   MARIADB_DATABASE_DIR=/var/lib/mysql
+   MARIADB_PLUGIN_DIR=/usr/lib/mariadb/plugin
+   MARIADB_PID_FILE=/run/mysqld/mysqld.pid
+   DB_ROOT_USER=root
+   ```
+
+4. **Verify Credentials**:
+   Check the `secrets/` directory contains proper credentials:
+   ```bash
+   cat secrets/credentials.txt
+   ```
 
 ## Starting and Stopping the Project
 
@@ -78,10 +99,11 @@ make all
 ```
 
 This command performs the following actions:
-1. Creates necessary directories on the host system
-2. Builds all Docker images
-3. Starts all services in detached mode
-4. Initializes the database and WordPress
+1. Creates necessary directories: `/home/$USER/data/mariadb` and `/home/$USER/data/wordpress`
+2. Builds all Docker images from Alpine 3.21
+3. Starts services in dependency order (MariaDB → WordPress → Nginx)
+4. Initializes database and WordPress automatically
+5. Generates SSL certificates for Nginx
 
 ### Manual Step-by-Step Start
 
@@ -104,7 +126,7 @@ To stop all services:
 make down
 ```
 
-This stops and removes all containers while preserving data volumes.
+This stops and removes all containers while preserving data in host directories.
 
 ### Restarting Services
 
@@ -115,11 +137,11 @@ make restart
 
 ### Complete Shutdown and Cleanup
 
-To remove all containers, volumes, and data:
+To remove all containers, networks, and host data:
 ```bash
 make fclean
 ```
-⚠️ **Warning**: This will permanently delete all website data and databases.
+⚠️ **Warning**: This will permanently delete all website data and databases from `/home/$USER/data/`.
 
 ## Accessing the Website
 
@@ -129,7 +151,7 @@ make fclean
    ```
    https://your-domain-name
    ```
-   Replace `your-domain-name` with your configured domain.
+   Replace `your-domain-name` with the DOMAIN_NAME from your `.env` file.
 
 2. **WordPress Admin Panel**: Access the administration interface at:
    ```
@@ -138,24 +160,35 @@ make fclean
 
 ### SSL Certificate Information
 
-- The project uses self-signed SSL certificates
-- Your browser will show a security warning
+- The project automatically generates self-signed SSL certificates on first startup
+- Your browser will show a security warning (this is normal for self-signed certificates)
 - Click "Advanced" and "Proceed to website" to continue
-- For production use, replace with proper SSL certificates
+- Certificates are generated using the domain name from your `.env` file
 
 ### Initial WordPress Setup
 
-1. **First-Time Configuration**:
-   - Visit the admin panel URL
-   - Create your WordPress administrator account
-   - Configure site title and description
-   - Select preferred language and timezone
+The WordPress installation is automated:
 
-2. **Recommended Settings**:
-   - Enable automatic updates
-   - Configure backup plugins
-   - Set up security plugins
-   - Configure caching for better performance
+1. **Automatic Configuration**:
+   - WordPress is automatically downloaded and configured
+   - Database connection is established automatically
+   - Two users are created automatically from `secrets/credentials.txt`:
+     - Admin user (default: root/root@42.fr)
+     - Subscriber user (default: aal-hawa/aal-hawa@42.fr)
+
+2. **Login Credentials**:
+   - View current credentials:
+     ```bash
+     cat secrets/credentials.txt
+     ```
+   - Admin credentials: WP_USER and WP_PASS
+   - Subscriber credentials: WP_USER2 and WP_PASS2
+
+3. **Recommended First Steps**:
+   - Change default passwords for security
+   - Configure site title and description in WordPress settings
+   - Install necessary plugins and themes
+   - Set up regular backups
 
 ## Managing Credentials
 
@@ -165,7 +198,7 @@ All sensitive credentials are stored in the `secrets/` directory:
 
 - `secrets/db_root_password.txt` - MariaDB root password
 - `secrets/db_password.txt` - WordPress database user password
-- `secrets/credentials.txt` - WordPress admin credentials
+- `secrets/credentials.txt` - WordPress admin and subscriber credentials
 
 ### Viewing Current Credentials
 
@@ -177,7 +210,7 @@ cat secrets/db_root_password.txt
 # WordPress database password
 cat secrets/db_password.txt
 
-# WordPress admin credentials
+# WordPress user credentials
 cat secrets/credentials.txt
 ```
 
@@ -202,6 +235,7 @@ cat secrets/credentials.txt
 
 ### Security Best Practices
 
+- **Change default passwords**: Immediately change the default credentials after first setup
 - **Use strong passwords**: Minimum 12 characters with mixed case, numbers, and symbols
 - **Regular rotation**: Change passwords every 90 days
 - **Limited access**: Only share credentials with authorized personnel
@@ -266,7 +300,12 @@ docker inspect --format='{{.State.Health.Status}}' nginx
 
 3. **Check disk space**:
    ```bash
-   df -h
+   df -h /home/$USER/data/
+   ```
+
+4. **Verify environment variables**:
+   ```bash
+   cat srcs/.env
    ```
 
 #### Website Not Accessible
@@ -278,12 +317,17 @@ docker inspect --format='{{.State.Health.Status}}' nginx
 
 2. **Check SSL certificates**:
    ```bash
-   docker exec nginx ls -la /etc/ssl/certs/
+   docker exec nginx ls -la /etc/self-signed.*
    ```
 
 3. **Test local connectivity**:
    ```bash
    curl -k https://localhost
+   ```
+
+4. **Check domain name configuration**:
+   ```bash
+   docker exec nginx env | grep DOMAIN_NAME
    ```
 
 #### Database Connection Issues
@@ -295,7 +339,12 @@ docker inspect --format='{{.State.Health.Status}}' nginx
 
 2. **Test database connectivity**:
    ```bash
-   docker exec wordpress wp-cli.phar db check
+   docker exec wordpress wp --allow-root --path=/var/www/html/wordpress db check
+   ```
+
+3. **Verify database user exists**:
+   ```bash
+   docker exec mariadb mysql -u root -p$(cat secrets/db_root_password.txt) -e "SHOW DATABASES;"
    ```
 
 ### Backup and Recovery
@@ -304,17 +353,27 @@ docker inspect --format='{{.State.Health.Status}}' nginx
 
 ```bash
 # Create database backup
-docker exec mariadb mysqldump -u root -p$(cat secrets/db_root_password.txt) wordpress > backup.sql
+docker exec mariadb mysqldump \
+  -u root \
+  -p$(cat secrets/db_root_password.txt) \
+  --single-transaction \
+  --routines \
+  --triggers \
+  wordpress > backup-$(date +%Y%m%d).sql
 
-# Automated daily backup (add to crontab)
-0 2 * * * docker exec mariadb mysqldump -u root -p$(cat /path/to/secrets/db_root_password.txt) wordpress > /path/to/backups/backup-$(date +\%Y\%m\%d).sql
+# Compressed backup
+docker exec mariadb mysqldump \
+  -u root \
+  -p$(cat secrets/db_root_password.txt) \
+  wordpress | gzip > backup-$(date +%Y%m%d).sql.gz
 ```
 
 #### WordPress Files Backup
 
 ```bash
 # Backup WordPress files
-tar -czf wordpress-backup.tar.gz /home/$USER/data/wordpress
+tar -czf wordpress-backup-$(date +%Y%m%d).tar.gz \
+  -C /home/$USER/data/wordpress .
 ```
 
 #### Volume Restoration
@@ -323,13 +382,13 @@ tar -czf wordpress-backup.tar.gz /home/$USER/data/wordpress
 # Stop services
 make down
 
-# Restore from backup
-sudo rm -rf /home/$USER/data/mariadb/*
-sudo rm -rf /home/$USER/data/wordpress/*
+# Restore database from backup
+gunzip -c backup-20231201.sql.gz | docker run -i --rm \
+  -v mariadb:/data alpine sh -c "cat > /data/restore.sql"
 
-# Extract backups
-tar -xzf mariadb-backup.tar.gz -C /home/$USER/data/mariadb/
-tar -xzf wordpress-backup.tar.gz -C /home/$USER/data/wordpress/
+# Restore WordPress files
+tar -xzf wordpress-backup-20231201.tar.gz \
+  -C /home/$USER/data/wordpress/
 
 # Restart services
 make up
@@ -345,14 +404,23 @@ docker stats
 
 # Check disk usage
 docker system df
+df -h /home/$USER/data/
 ```
 
 ### Optimization Tips
 
-1. **Enable WordPress Caching**: Install caching plugins like W3 Total Cache
-2. **Optimize Images**: Use image optimization plugins
-3. **Database Optimization**: Regular database cleanup and optimization
-4. **CDN Integration**: Consider CDN for static assets
+1. **WordPress Caching**: Install caching plugins like W3 Total Cache or WP Super Cache
+2. **Image Optimization**: Use image optimization plugins for uploaded images
+3. **Database Optimization**: Regular database cleanup and optimization using WP-CLI
+4. **PHP-FPM Tuning**: Adjust PHP-FPM settings in `conf/www.conf` based on traffic
+5. **Nginx Optimization**: Enable gzip compression and configure caching headers
+
+### Scaling Considerations
+
+- **Database Scaling**: Consider read replicas for high-traffic sites
+- **Static File Serving**: Configure CDN for static assets
+- **Load Balancing**: Multiple Nginx instances behind a load balancer
+- **Container Resources**: Adjust memory and CPU limits based on usage patterns
 
 ## Troubleshooting
 
@@ -380,6 +448,14 @@ docker compose restart wordpress
 docker compose restart mariadb
 ```
 
+#### SSL Certificate Issues
+
+```bash
+# Regenerate SSL certificates
+docker exec nginx rm /etc/self-signed.*
+docker compose restart nginx
+```
+
 ### Getting Help
 
 For additional support:
@@ -396,3 +472,11 @@ Important log locations:
 - WordPress errors: `docker logs wordpress`
 - Database errors: `docker logs mariadb`
 - System logs: `journalctl -u docker`
+
+### Data Locations
+
+- **Database files**: `/home/$USER/data/mariadb/`
+- **WordPress files**: `/home/$USER/data/wordpress/`
+- **SSL certificates**: Generated inside Nginx container at `/etc/self-signed.*`
+- **Configuration files**: `srcs/requirements/*/conf/`
+- **Secrets**: `secrets/` directory
