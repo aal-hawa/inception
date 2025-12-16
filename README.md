@@ -7,9 +7,9 @@
 Inception is a comprehensive Docker-based project that demonstrates advanced containerization skills by building a complete LEMP stack (Linux, Nginx, MariaDB, PHP) from scratch using Alpine Linux containers. This project creates a fully functional WordPress hosting environment with automated SSL certificate generation, secure credential management, and persistent data storage.
 
 The project architecture consists of:
-- **Nginx** (Alpine 3.21) as a reverse proxy and web server with automated SSL/TLS support
-- **MariaDB** (Alpine 3.21) as the database backend with OpenRC service management
-- **WordPress** (Alpine 3.21) with PHP-FPM 8.3 and WP-CLI for automated WordPress installation
+- **Nginx** (Alpine 3.22) as a reverse proxy and web server with automated SSL/TLS support
+- **MariaDB** (Alpine 3.22) as the database backend with OpenRC service management
+- **WordPress** (Alpine 3.22) with PHP-FPM 8.3 and WP-CLI for automated WordPress installation
 - **Docker Compose** for orchestration and service management
 - **Docker Secrets** for secure credential management
 - **Custom Docker bridge network** for isolated service communication
@@ -56,12 +56,12 @@ The main goal is to demonstrate proficiency in containerization, service orchest
 
    Current credentials format:
    ```
-   WP_USER=root
-   WP_PASS=root
-   WP_EMAIL=root@42.fr
-   WP_USER2=aal-hawa
-   WP_PASS2=aal-hawa
-   WP_EMAIL2=aal-hawa@42.fr
+   WP_USER=WP_USER
+   WP_PASS=WP_PASS
+   WP_EMAIL=WP_EMAIL@42.fr
+   WP_USER2=WP_USER2
+   WP_PASS2=WP_PASS2
+   WP_EMAIL2=WP_EMAIL2@42.fr
    ```
 
 ### Compilation and Installation
@@ -72,7 +72,7 @@ The main goal is to demonstrate proficiency in containerization, service orchest
    ```
    This command will:
    - Create necessary directories: `/home/$USER/data/mariadb` and `/home/$USER/data/wordpress`
-   - Build all Docker images from Alpine 3.21 base
+   - Build all Docker images from Alpine 3.22 base
    - Start all services in dependency order with health checks
    - Initialize MariaDB database and WordPress installation
 
@@ -130,7 +130,7 @@ This project leverages Docker's containerization capabilities to create isolated
 
 ### Sources Included
 
-- **Custom Dockerfiles** for each service based on Alpine 3.21:
+- **Custom Dockerfiles** for each service based on Alpine 3.22:
   - `srcs/requirements/mariadb/Dockerfile` - MariaDB with OpenRC
   - `srcs/requirements/wordpress/Dockerfile` - PHP-FPM 8.3 with WP-CLI
   - `srcs/requirements/nginx/Dockerfile` - Nginx with OpenSSL

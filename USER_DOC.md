@@ -9,7 +9,7 @@ This document provides essential information for end users and system administra
 The Inception stack includes the following services:
 
 ### Web Services
-- **Nginx Web Server (Alpine 3.21)**: High-performance reverse proxy with automated SSL/TLS
+- **Nginx Web Server (Alpine 3.22)**: High-performance reverse proxy with automated SSL/TLS
   - Handles HTTPS traffic on port 443
   - Automatically generates self-signed SSL certificates on startup
   - Provides static file serving and PHP-FPM request forwarding
@@ -23,7 +23,7 @@ The Inception stack includes the following services:
   - Uses PHP-FPM 8.3 for optimal performance
 
 ### Database Services
-- **MariaDB Database Server (Alpine 3.21)**: Robust relational database with OpenRC
+- **MariaDB Database Server (Alpine 3.22)**: Robust relational database with OpenRC
   - Stores WordPress content, user data, and configuration
   - Automated database initialization with secure user accounts
   - Uses OpenRC for service management
@@ -72,9 +72,9 @@ Before deploying the Inception stack, ensure your system meets these requirement
    Create `srcs/.env` file:
    ```bash
    # srcs/.env
-   DOMAIN_NAME=your-domain.com
-   DB_NAME=wordpress
-   DB_USER=wordpress_user
+   DOMAIN_NAME=YOUR_DOMAIN_NAME
+   DB_NAME=YOUR_DB_NAME
+   DB_USER=YOUR_DB_USER
    DB_HOST=mariadb
    MARIADB_USER=mysql
    MARIADB_DATABASE_DIR=/var/lib/mysql
@@ -83,10 +83,25 @@ Before deploying the Inception stack, ensure your system meets these requirement
    DB_ROOT_USER=root
    ```
 
-4. **Verify Credentials**:
-   Check the `secrets/` directory contains proper credentials:
+4. **Configure Credentials**:
+   Set up the `secrets/` directory with secure credentials:
    ```bash
-   cat secrets/credentials.txt
+   # Create secure passwords
+   openssl rand -base64 32 > secrets/db_root_password.txt
+   openssl rand -base64 32 > secrets/db_password.txt
+
+   # Create WordPress credentials
+   cat > secrets/credentials.txt << EOF
+   WP_USER=YOUR_WP_ADMIN_USER
+   WP_PASS=YOUR_WP_ADMIN_PASSWORD
+   WP_EMAIL=YOUR_WP_ADMIN_EMAIL
+   WP_USER2=YOUR_WP_USER
+   WP_PASS2=YOUR_WP_USER_PASSWORD
+   WP_EMAIL2=YOUR_WP_USER_EMAIL
+   EOF
+
+   # Set proper permissions
+   chmod 600 secrets/*
    ```
 
 ## Starting and Stopping the Project
@@ -100,7 +115,7 @@ make all
 
 This command performs the following actions:
 1. Creates necessary directories: `/home/$USER/data/mariadb` and `/home/$USER/data/wordpress`
-2. Builds all Docker images from Alpine 3.21
+2. Builds all Docker images from Alpine 3.22
 3. Starts services in dependency order (MariaDB → WordPress → Nginx)
 4. Initializes database and WordPress automatically
 5. Generates SSL certificates for Nginx
@@ -149,13 +164,13 @@ make fclean
 
 1. **Main Website**: Open your web browser and navigate to:
    ```
-   https://your-domain-name
+   https://YOUR_DOMAIN_NAME
    ```
-   Replace `your-domain-name` with the DOMAIN_NAME from your `.env` file.
+   Replace `YOUR_DOMAIN_NAME` with the DOMAIN_NAME from your `.env` file.
 
 2. **WordPress Admin Panel**: Access the administration interface at:
    ```
-   https://your-domain-name/wp-admin
+   https://YOUR_DOMAIN_NAME/wp-admin
    ```
 
 ### SSL Certificate Information
@@ -173,16 +188,16 @@ The WordPress installation is automated:
    - WordPress is automatically downloaded and configured
    - Database connection is established automatically
    - Two users are created automatically from `secrets/credentials.txt`:
-     - Admin user (default: root/root@42.fr)
-     - Subscriber user (default: aal-hawa/aal-hawa@42.fr)
+     - Admin user (configured in secrets)
+     - Subscriber user (configured in secrets)
 
 2. **Login Credentials**:
    - View current credentials:
      ```bash
      cat secrets/credentials.txt
      ```
-   - Admin credentials: WP_USER and WP_PASS
-   - Subscriber credentials: WP_USER2 and WP_PASS2
+   - Admin credentials: WP_USER and WP_PASS from secrets file
+   - Subscriber credentials: WP_USER2 and WP_PASS2 from secrets file
 
 3. **Recommended First Steps**:
    - Change default passwords for security

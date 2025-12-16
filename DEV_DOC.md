@@ -66,9 +66,9 @@ Create and configure the `.env` file in `srcs/`:
 
 ```bash
 # srcs/.env
-DOMAIN_NAME=your-domain.com
-DB_NAME=wordpress
-DB_USER=wordpress_user
+DOMAIN_NAME=YOUR_DOMAIN_NAME
+DB_NAME=YOUR_DB_NAME
+DB_USER=YOUR_DB_USER
 DB_HOST=mariadb
 MARIADB_USER=mysql
 MARIADB_DATABASE_DIR=/var/lib/mysql
@@ -88,12 +88,12 @@ openssl rand -base64 32 > secrets/db_password.txt
 
 # Create WordPress credentials (maintain the format)
 cat > secrets/credentials.txt << EOF
-WP_USER=admin
-WP_PASS=$(openssl rand -base64 16)
-WP_EMAIL=admin@your-domain.com
-WP_USER2=subscriber
-WP_PASS2=$(openssl rand -base64 16)
-WP_EMAIL2=subscriber@your-domain.com
+WP_USER=YOUR_WP_ADMIN_USER
+WP_PASS=YOUR_WP_ADMIN_PASSWORD
+WP_EMAIL=YOUR_WP_ADMIN_EMAIL
+WP_USER2=YOUR_WP_USER
+WP_PASS2=YOUR_WP_USER_PASSWORD
+WP_EMAIL2=YOUR_WP_USER_EMAIL
 EOF
 
 # Set proper permissions
@@ -341,7 +341,7 @@ make up
 
 **MariaDB Dockerfile** (`srcs/requirements/mariadb/Dockerfile`):
 ```dockerfile
-FROM alpine:3.21
+FROM alpine:3.22
 RUN apk update
 RUN apk add mariadb mariadb-client openrc
 RUN mkdir -p /run/openrc && touch /run/openrc/softlevel
@@ -353,7 +353,7 @@ ENTRYPOINT [ "/entrypoint.sh" ]
 
 **WordPress Dockerfile** (`srcs/requirements/wordpress/Dockerfile`):
 ```dockerfile
-FROM alpine:3.21
+FROM alpine:3.22
 RUN apk update && apk add php php83 php83-fpm php83-mysqli \
   php83-mbstring php83-gd php83-opcache php83-phar php83-xml \
   mariadb-client wget tar
@@ -367,7 +367,7 @@ ENTRYPOINT ["/entrypoint.sh"]
 
 **Nginx Dockerfile** (`srcs/requirements/nginx/Dockerfile`):
 ```dockerfile
-FROM alpine:3.21
+FROM alpine:3.22
 RUN apk update && apk add nginx openssl
 COPY conf/nginx.conf /etc/nginx/nginx.conf
 COPY tools/entrypoint.sh /entrypoint.sh
@@ -506,11 +506,11 @@ For optimizing image sizes:
 
 ```dockerfile
 # Example optimized WordPress Dockerfile
-FROM alpine:3.21 as builder
+FROM alpine:3.22 as builder
 RUN apk add --no-cache php83 php83-phar wget
 COPY tools/wp-cli.phar /usr/local/bin/wp
 
-FROM alpine:3.21 as runtime
+FROM alpine:3.22 as runtime
 RUN apk add --no-cache php83 php83-fpm php83-mysqli \
   php83-mbstring php83-gd php83-opcache php83-xml \
   mariadb-client
@@ -702,7 +702,7 @@ docker exec mariadb mysql -u root -p -e "SHOW SLOW QUERY LOG;"
 
 ### Project-Specific Guidelines
 
-1. **Alpine Linux**: Use Alpine 3.21 as base image for minimal size
+1. **Alpine Linux**: Use Alpine 3.22 as base image for minimal size
 2. **Service Dependencies**: Respect service dependencies in docker-compose.yml
 3. **Health Checks**: Implement proper health checks for all services
 4. **Secret Management**: Use Docker secrets for all sensitive data
